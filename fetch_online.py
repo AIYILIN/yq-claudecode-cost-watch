@@ -219,6 +219,74 @@ def merge_csv(filename, fieldnames, new_rows):
     return added
 
 
+def recompute_cost_csv(amount_filename):
+    """从 amount CSV 重新计算 cost CSV（排除已删除用户）。返回 (文件名, 行数)。"""
+    amount_path = os.path.join(BASE_DIR, amount_filename)
+    if not os.path.exists(amount_path):
+        return None, 0
+
+    # 加载已删除用户列表
+    deleted_users = set()
+    deleted_path = os.path.join(BASE_DIR, "deleted-users.json")
+    if os.path.exists(deleted_path):
+        with open(deleted_path, "r", encoding="utf-8") as f:
+            deleted_users = set(json.load(f))
+
+    from collections import defaultdict
+
+    daily = defaultdict(float)
+    with open(amount_path, newline="", encoding="utf-8") as f:
+        reader = csv.DictReader(f)
+        for row in reader:
+            if row.get("api_key_name", "") in deleted_users:
+                continue
+            if row.get("type", "") == "request_count":
+                continue
+            price = float(row["price"]) if row.get("price") else 0
+            amt = float(row["amount"]) if row.get("amount") else 0
+            key = (row.get("utc_date", ""), row.get("model", ""))
+            daily[key] += price * amt
+
+    # 推断月份
+    if daily:
+        first_date = list(daily.keys())[0][0]
+        try:
+            dt = datetime.strptime(first_date[:10], "%Y-%m-%d")
+            month = f"{dt.year}-{dt.month}"
+        except Exception:
+            month = f"{datetime.now().year}-{datetime.now().month}"
+    else:
+        month = f"{datetime.now().year}-{datetime.now().month}"
+
+    cost_filename = f"cost-{month}.csv"
+    fieldnames = ["user_id", "utc_date", "model", "wallet_type", "cost", "currency"]
+    rows = []
+    for (date, model), cost in sorted(daily.items()):
+        rows.append({
+            "user_id": "",
+            "utc_date": date,
+            "model": model,
+            "wallet_type": "Paid",
+            "cost": str(round(cost, 6)),
+            "currency": "CNY",
+        })
+
+    tmp_fd, tmp_path = tempfile.mkstemp(dir=BASE_DIR, suffix=".csv")
+    try:
+        with os.fdopen(tmp_fd, "w", newline="", encoding="utf-8") as f:
+            writer = csv.DictWriter(f, fieldnames=fieldnames)
+            writer.writeheader()
+            for row in rows:
+                writer.writerow(row)
+        os.replace(tmp_path, os.path.join(BASE_DIR, cost_filename))
+    except BaseException:
+        if os.path.exists(tmp_path):
+            os.unlink(tmp_path)
+        raise
+
+    return cost_filename, len(rows)
+
+
 def detect_month_from_data(rows, file_type):
     """从数据行推断月份，返回 'YYYY-M' 格式。"""
     for row in rows:
@@ -515,6 +583,7 @@ def main():
 
             total_added = 0
             processed_files = []
+            processed_amount_file = None  # 记录处理的 amount 文件名，用于后续重算 cost
 
             for filepath in data_files:
                 if filepath.endswith((".xlsx", ".xls")):
@@ -523,8 +592,9 @@ def main():
                         fieldnames = ["user_id", "utc_date", "model", "api_key_name", "api_key", "type", "price", "amount"]
                         rows = read_excel_to_rows(filepath, AMOUNT_COLUMN_MAP, fieldnames)
                     elif ftype == "cost":
-                        fieldnames = ["user_id", "utc_date", "model", "wallet_type", "cost", "currency"]
-                        rows = read_excel_to_rows(filepath, COST_COLUMN_MAP, fieldnames)
+                        # 跳过 DeepSeek 的 cost 导出 — 改为从 amount 重新计算
+                        print(f"[fetch_online] 跳过 cost 文件 (将从 amount 重新计算): {os.path.basename(filepath)}")
+                        continue
                     else:
                         print(f"[fetch_online] 跳过未知 Excel: {os.path.basename(filepath)} (列名: {header})")
                         continue
@@ -534,7 +604,9 @@ def main():
                     if ftype == "amount":
                         fieldnames = ["user_id", "utc_date", "model", "api_key_name", "api_key", "type", "price", "amount"]
                     elif ftype == "cost":
-                        fieldnames = ["user_id", "utc_date", "model", "wallet_type", "cost", "currency"]
+                        # 跳过 DeepSeek 的 cost 导出
+                        print(f"[fetch_online] 跳过 cost 文件 (将从 amount 重新计算): {os.path.basename(filepath)}")
+                        continue
                     else:
                         print(f"[fetch_online] 跳过未知 CSV: {os.path.basename(filepath)}")
                         continue
@@ -544,11 +616,19 @@ def main():
                 added = merge_csv(filename, fieldnames, rows)
                 total_added += added
                 processed_files.append(f"{filename} (+{added}行)")
+                processed_amount_file = filename
                 print(f"[fetch_online] {filename}: 合并 {len(rows)} 行, 新增 {added} 行")
 
             if not processed_files:
                 write_status("error", "未识别到可处理的数据文件。请检查导出格式。")
                 return 1
+
+            # ── 从 amount 数据重新计算 cost CSV ──
+            if processed_amount_file:
+                cost_file, cost_rows = recompute_cost_csv(processed_amount_file)
+                if cost_file:
+                    processed_files.append(f"{cost_file} ({cost_rows}行, 重新计算)")
+                    print(f"[fetch_online] {cost_file}: 从 amount 重新计算, {cost_rows} 行")
 
             msg = "数据已更新 · " + ", ".join(processed_files)
             write_status("done", msg, ok=True, total_added=total_added)
