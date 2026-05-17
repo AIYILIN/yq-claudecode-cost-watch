@@ -258,50 +258,80 @@ def main():
             write_status("running", "正在访问 DeepSeek 平台...")
             page.goto("https://platform.deepseek.com/usage", wait_until="domcontentloaded", timeout=30000)
 
-            # 检测是否需要登录
-            page.wait_for_timeout(2000)
-            current_url = page.url
-            is_login_page = any(kw in current_url.lower() for kw in ["login", "signin", "sign_in", "sign-in"])
+            # ── 登录检测与等待（循环检测，直到确认已登录） ──
+            login_deadline = time.time() + 300  # 最多等 5 分钟
+            login_notified = False
 
-            if is_login_page:
-                write_status("awaiting_login", "请在浏览器中登录 DeepSeek 平台")
-                print("[fetch_online] 等待用户登录...")
+            while time.time() < login_deadline:
+                page.wait_for_timeout(2000)
+                cur_url = page.url.lower()
 
-                # 等待用户登录，最多等 5 分钟
-                deadline = time.time() + 300
-                while time.time() < deadline:
-                    page.wait_for_timeout(2000)
-                    cur = page.url
-                    if "login" not in cur.lower() and "signin" not in cur.lower():
-                        # 可能已登录，再等一下确保页面加载完毕
-                        page.wait_for_timeout(2000)
-                        # 确保在 usage 页面
-                        if "usage" not in page.url.lower():
-                            page.goto("https://platform.deepseek.com/usage", wait_until="domcontentloaded", timeout=30000)
-                            page.wait_for_timeout(2000)
-                        print("[fetch_online] 检测到登录成功")
-                        write_status("running", "登录成功，正在获取数据...")
-                        break
+                # 检测是否是登录页面：URL 含 login/signin，或页面包含登录表单
+                url_is_login = any(kw in cur_url for kw in ["login", "signin", "sign_in", "sign-in", "signup", "sign-up", "register", "auth"])
+                has_login_form = False
+                try:
+                    # 检查是否有登录相关表单元素
+                    pw_fields = page.locator("input[type='password']")
+                    code_fields = page.locator("input[type='text'][name*='code' i], input[name*='code' i], input[placeholder*='验证码' i], input[placeholder*='code' i], input[placeholder*='验证' i]")
+                    phone_fields = page.locator("input[type='tel'], input[placeholder*='手机' i], input[placeholder*='phone' i], input[placeholder*='邮箱' i], input[placeholder*='email' i]")
+                    login_btns = page.locator("button:has-text('登录'), button:has-text('Log in'), button:has-text('Sign in'), button:has-text('登 录'), button:has-text('Continue'), button:has-text('继续')")
+                    # 有密码框 或 (有验证码框+手机框) 且 有登录按钮
+                    has_pw = pw_fields.count() > 0
+                    has_code_or_phone = (code_fields.count() > 0 or phone_fields.count() > 0)
+                    has_btn = login_btns.count() > 0
+                    has_login_form = (has_pw and has_btn) or (has_code_or_phone and has_btn)
+                except Exception:
+                    pass
+
+                is_login_page = url_is_login or has_login_form
+
+                if is_login_page:
+                    if not login_notified:
+                        write_status("awaiting_login", "请在浏览器中登录 DeepSeek 平台")
+                        print("[fetch_online] 检测到登录页面，等待用户登录...")
+                        login_notified = True
                     write_status("awaiting_login", "请在浏览器中登录 DeepSeek 平台")
-                else:
-                    write_status("error", "登录超时（5分钟），请重试")
-                    context.close()
-                    return 1
+                    continue
 
-            # 确保在 usage 页面
-            if "usage" not in page.url.lower():
-                page.goto("https://platform.deepseek.com/usage", wait_until="domcontentloaded", timeout=30000)
-                page.wait_for_timeout(3000)
+                # 不在登录页，检查是否在 usage 页面
+                if "usage" in cur_url or "platform.deepseek.com" in cur_url:
+                    # 等待页面稳定
+                    page.wait_for_timeout(2000)
+                    try:
+                        page.wait_for_load_state("networkidle", timeout=10000)
+                    except Exception:
+                        pass
+
+                    # 二次确认：等待后再次检查是否还在 usage 页面
+                    page.wait_for_timeout(1000)
+                    cur_url2 = page.url.lower()
+
+                    # 再次检查有没有登录表单
+                    try:
+                        pw = page.locator("input[type='password']").count()
+                        code = page.locator("input[name*='code' i], input[placeholder*='验证码' i]").count()
+                        btn = page.locator("button:has-text('登录'), button:has-text('Sign in')").count()
+                        if (pw > 0 or code > 0) and btn > 0:
+                            continue  # 仍在登录页
+                    except Exception:
+                        pass
+
+                    if "usage" not in cur_url2 and "platform.deepseek.com" not in cur_url2:
+                        # 不在 DeepSeek 平台，尝试导航
+                        page.goto("https://platform.deepseek.com/usage", wait_until="domcontentloaded", timeout=30000)
+                        continue
+
+                    print("[fetch_online] 确认已登录，在 usage 页面")
+                    write_status("running", "登录成功，正在获取数据...")
+                    break
+
+            else:
+                write_status("error", "登录超时（5分钟），请重试")
+                context.close()
+                return 1
 
             # 查找"导出"按钮
             write_status("running", "正在查找导出按钮...")
-
-            # 先等待页面完全加载
-            page.wait_for_timeout(3000)
-            try:
-                page.wait_for_load_state("networkidle", timeout=15000)
-            except Exception:
-                pass
 
             # 尝试滚动到"每月用量"区域
             try:
