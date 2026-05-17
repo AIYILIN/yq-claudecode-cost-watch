@@ -4,3 +4,4 @@
 .fetch-debug.*
 .fetch-diag.txt
 __pycache__/
+*.bak
