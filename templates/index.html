@@ -1,0 +1,630 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="dark">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>花费统计仪表盘</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
+<style>
+/* ============================================================
+   CSS Variables - Dark/Light Theme
+   ============================================================ */
+:root {
+  --bg-primary: #0f1119;
+  --bg-secondary: #161825;
+  --bg-card: rgba(22, 24, 37, 0.6);
+  --bg-card-hover: rgba(30, 33, 50, 0.7);
+  --border: rgba(255,255,255,0.06);
+  --border-hover: rgba(255,255,255,0.12);
+  --text-primary: #e8eaed;
+  --text-secondary: #9aa0a6;
+  --text-muted: #5f6368;
+  --accent: #6c8cff;
+  --accent-glow: rgba(108, 140, 255, 0.25);
+  --green: #34d399;
+  --green-bg: rgba(52, 211, 153, 0.12);
+  --orange: #fb923c;
+  --orange-bg: rgba(251, 146, 60, 0.12);
+  --purple: #a78bfa;
+  --purple-bg: rgba(167, 139, 250, 0.12);
+  --pink: #f472b6;
+  --pink-bg: rgba(244, 114, 182, 0.12);
+  --danger: #ef4444;
+  --danger-bg: rgba(239, 68, 68, 0.12);
+  --chip-bg: rgba(255,255,255,0.04);
+  --chip-active-bg: rgba(108, 140, 255, 0.18);
+  --chip-active-border: rgba(108, 140, 255, 0.4);
+  --shadow: 0 4px 24px rgba(0,0,0,0.3);
+  --glass-blur: 16px;
+  --radius: 14px;
+  --radius-sm: 8px;
+  --transition: 0.35s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+[data-theme="light"] {
+  --bg-primary: #f1f5f9;
+  --bg-secondary: #ffffff;
+  --bg-card: rgba(255,255,255,0.7);
+  --bg-card-hover: rgba(255,255,255,0.9);
+  --border: rgba(0,0,0,0.06);
+  --border-hover: rgba(0,0,0,0.12);
+  --text-primary: #1e293b;
+  --text-secondary: #64748b;
+  --text-muted: #94a3b8;
+  --accent: #4f6ef6;
+  --accent-glow: rgba(79, 110, 246, 0.15);
+  --green-bg: rgba(52, 211, 153, 0.15);
+  --orange-bg: rgba(251, 146, 60, 0.15);
+  --purple-bg: rgba(167, 139, 250, 0.15);
+  --pink-bg: rgba(244, 114, 182, 0.15);
+  --danger-bg: rgba(239, 68, 68, 0.1);
+  --chip-bg: rgba(0,0,0,0.03);
+  --chip-active-bg: rgba(79, 110, 246, 0.12);
+  --chip-active-border: rgba(79, 110, 246, 0.35);
+  --shadow: 0 4px 24px rgba(0,0,0,0.06);
+  --glass-blur: 20px;
+}
+
+/* ============================================================
+   Base
+   ============================================================ */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC',
+    'Microsoft YaHei', sans-serif;
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  min-height: 100vh;
+  transition: background var(--transition), color var(--transition);
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+}
+body::before {
+  content: ''; position: fixed; top: -50%; left: -30%;
+  width: 80%; height: 100%;
+  background: radial-gradient(ellipse, rgba(108,140,255,0.04) 0%, transparent 70%);
+  pointer-events: none; z-index: 0;
+}
+body::after {
+  content: ''; position: fixed; bottom: -40%; right: -20%;
+  width: 70%; height: 80%;
+  background: radial-gradient(ellipse, rgba(167,139,250,0.04) 0%, transparent 70%);
+  pointer-events: none; z-index: 0;
+}
+.container { position: relative; z-index: 1; max-width: 1340px; margin: 0 auto; padding: 20px 24px 40px; }
+
+/* ============================================================
+   Header
+   ============================================================ */
+.header {
+  display: flex; align-items: center; justify-content: space-between;
+  margin-bottom: 28px; flex-wrap: wrap; gap: 16px;
+}
+.header-left h1 {
+  font-size: 1.6rem; font-weight: 700; letter-spacing: -0.02em;
+  background: linear-gradient(135deg, var(--accent), var(--purple));
+  -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+.header-left .sub { font-size: 0.82rem; color: var(--text-muted); margin-top: 2px; }
+.header-right { display: flex; align-items: center; gap: 12px; }
+
+.theme-toggle, .edit-toggle {
+  width: 44px; height: 44px; border-radius: 12px;
+  border: 1px solid var(--border);
+  background: var(--bg-card);
+  backdrop-filter: blur(var(--glass-blur));
+  -webkit-backdrop-filter: blur(var(--glass-blur));
+  cursor: pointer; font-size: 1.2rem;
+  display: flex; align-items: center; justify-content: center;
+  transition: all var(--transition); color: var(--text-secondary);
+}
+.theme-toggle:hover, .edit-toggle:hover {
+  border-color: var(--border-hover); background: var(--bg-card-hover); color: var(--text-primary);
+}
+.theme-toggle:hover { transform: rotate(15deg); }
+.edit-toggle:hover { transform: scale(1.08); }
+.edit-toggle.active {
+  border-color: var(--accent); color: var(--accent);
+  box-shadow: 0 0 16px var(--accent-glow); background: var(--chip-active-bg);
+}
+
+.refresh-btn {
+  height: 44px; padding: 0 18px; border-radius: 12px;
+  border: 1px solid var(--border); background: var(--bg-card);
+  backdrop-filter: blur(var(--glass-blur));
+  -webkit-backdrop-filter: blur(var(--glass-blur));
+  cursor: pointer; color: var(--text-secondary);
+  font-size: 0.88rem; font-weight: 500;
+  transition: all var(--transition); display: flex; align-items: center; gap: 6px;
+}
+.refresh-btn:hover { border-color: var(--accent); color: var(--accent); background: var(--bg-card-hover); }
+.refresh-btn.spin svg { animation: spin 0.6s ease; }
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* ============================================================
+   Summary Cards
+   ============================================================ */
+.summary-cards { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; margin-bottom: 24px; }
+.stat-card {
+  background: var(--bg-card); backdrop-filter: blur(var(--glass-blur));
+  -webkit-backdrop-filter: blur(var(--glass-blur));
+  border: 1px solid var(--border); border-radius: var(--radius);
+  padding: 20px 22px; transition: all var(--transition); position: relative; overflow: hidden;
+}
+.stat-card:hover { border-color: var(--border-hover); background: var(--bg-card-hover); transform: translateY(-2px); box-shadow: var(--shadow); }
+.stat-card .icon { width: 38px; height: 38px; border-radius: 10px; display: flex; align-items: center; justify-content: center; font-size: 1.15rem; margin-bottom: 12px; }
+.stat-card .label { font-size: 0.8rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 4px; }
+.stat-card .value { font-size: 1.75rem; font-weight: 700; letter-spacing: -0.02em; transition: color var(--transition); }
+.icon-cost  { background: var(--purple-bg); color: var(--purple); }
+.icon-avg   { background: var(--green-bg);  color: var(--green); }
+.icon-req   { background: var(--orange-bg); color: var(--orange); }
+.icon-day   { background: var(--pink-bg);   color: var(--pink); }
+.value-cost { color: var(--purple); }
+.value-avg  { color: var(--green); }
+.value-req  { color: var(--orange); }
+.value-day  { color: var(--pink); }
+
+/* ============================================================
+   Date Filter
+   ============================================================ */
+.date-filter {
+  background: var(--bg-card); backdrop-filter: blur(var(--glass-blur));
+  -webkit-backdrop-filter: blur(var(--glass-blur));
+  border: 1px solid var(--border); border-radius: var(--radius);
+  padding: 16px 20px; margin-bottom: 24px; transition: all var(--transition);
+}
+.date-filter-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; flex-wrap: wrap; gap: 8px; }
+.date-filter-title { font-size: 0.85rem; font-weight: 600; color: var(--text-secondary); letter-spacing: 0.02em; }
+.date-filter-actions { display: flex; gap: 6px; }
+.date-filter-actions button { padding: 5px 14px; border-radius: 8px; border: 1px solid var(--border); background: var(--chip-bg); color: var(--text-secondary); cursor: pointer; font-size: 0.78rem; font-weight: 500; transition: all var(--transition); }
+.date-filter-actions button:hover { border-color: var(--accent); color: var(--accent); }
+.date-chips { display: flex; flex-wrap: wrap; gap: 6px; max-height: 120px; overflow-y: auto; padding-right: 4px; }
+.date-chip { padding: 6px 13px; border-radius: 22px; border: 1px solid var(--border); background: var(--chip-bg); color: var(--text-secondary); cursor: pointer; font-size: 0.78rem; font-weight: 500; transition: all 0.25s ease; white-space: nowrap; user-select: none; }
+.date-chip:hover { border-color: var(--accent); color: var(--text-primary); }
+.date-chip.active { background: var(--chip-active-bg); border-color: var(--chip-active-border); color: var(--accent); font-weight: 600; box-shadow: 0 0 12px var(--accent-glow); }
+@keyframes chipIn { from { opacity:0; transform:scale(0.85) } to { opacity:1; transform:scale(1) } }
+.date-chip { animation: chipIn 0.3s ease backwards; }
+.date-chips::-webkit-scrollbar { height:4px;width:4px }
+.date-chips::-webkit-scrollbar-track { background:transparent }
+.date-chips::-webkit-scrollbar-thumb { background:var(--border);border-radius:4px }
+
+/* ============================================================
+   Charts
+   ============================================================ */
+.charts-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 16px; margin-bottom: 24px; }
+.chart-card { background: var(--bg-card); backdrop-filter: blur(var(--glass-blur)); -webkit-backdrop-filter: blur(var(--glass-blur)); border: 1px solid var(--border); border-radius: var(--radius); padding: 20px 22px; transition: all var(--transition); }
+.chart-card:hover { border-color: var(--border-hover); box-shadow: var(--shadow); }
+.chart-card.full-width { grid-column: 1/-1; }
+.chart-card-header { font-size: 0.85rem; font-weight: 600; color: var(--text-secondary); margin-bottom: 14px; letter-spacing: 0.02em; }
+.chart-wrap { position: relative; width: 100%; height: 300px; }
+.chart-wrap.tall { height: 360px; }
+
+/* ============================================================
+   Edit Panel
+   ============================================================ */
+.edit-panel {
+  background: var(--bg-card); backdrop-filter: blur(var(--glass-blur));
+  -webkit-backdrop-filter: blur(var(--glass-blur));
+  border: 1px solid var(--border); border-radius: var(--radius);
+  margin-bottom: 24px; overflow: hidden;
+  max-height: 0; opacity: 0;
+  transition: max-height 0.5s cubic-bezier(0.4,0,0.2,1), opacity 0.35s ease, margin 0.35s ease;
+}
+.edit-panel.open { max-height: 2200px; opacity: 1; }
+.edit-panel-inner { padding: 20px 22px; }
+
+/* Tabs */
+.tab-bar { display: flex; gap: 2px; background: var(--chip-bg); border-radius: var(--radius-sm); padding: 3px; margin-bottom: 18px; }
+.tab-btn { flex:1; padding:8px 16px; border-radius:6px; border:none; background:transparent; color:var(--text-muted); cursor:pointer; font-size:0.83rem; font-weight:500; transition:all 0.25s ease; }
+.tab-btn:hover { color: var(--text-secondary); }
+.tab-btn.active { background:var(--bg-card); color:var(--accent); font-weight:600; box-shadow:0 1px 4px rgba(0,0,0,0.15); }
+.tab-content { display: none; }
+.tab-content.active { display:block; animation:fadeSlideIn 0.3s ease; }
+@keyframes fadeSlideIn { from{opacity:0;transform:translateY(8px)} to{opacity:1;transform:translateY(0)} }
+
+/* Alias editor */
+.alias-toolbar { display:flex; gap:8px; margin-bottom:14px; flex-wrap:wrap; }
+.btn-xs { padding:6px 14px; border-radius:8px; border:1px solid var(--border); background:var(--chip-bg); color:var(--text-secondary); cursor:pointer; font-size:0.78rem; font-weight:500; transition:all var(--transition); }
+.btn-xs:hover { border-color:var(--accent); color:var(--accent); }
+.btn-xs.primary { background:var(--accent); color:#fff; border-color:var(--accent); }
+.btn-xs.primary:hover { opacity:0.85; }
+.alias-table { width:100%; border-collapse:collapse; }
+.alias-table th,.alias-table td { padding:10px 14px; text-align:left; border-bottom:1px solid var(--border); font-size:0.83rem; }
+.alias-table th { color:var(--text-muted); font-weight:600; font-size:0.76rem; text-transform:uppercase; letter-spacing:0.04em; }
+.alias-table td { color:var(--text-secondary); }
+.alias-table .alias-input { width:100%; padding:6px 10px; border-radius:6px; border:1px solid var(--border); background:var(--bg-secondary); color:var(--text-primary); font-size:0.83rem; outline:none; transition:border-color 0.2s; }
+.alias-table .alias-input:focus { border-color:var(--accent); }
+.alias-del-btn { width:32px;height:32px;border-radius:6px;border:1px solid transparent;background:transparent;color:var(--text-muted);cursor:pointer;font-size:1rem;display:flex;align-items:center;justify-content:center;transition:all 0.2s; }
+.alias-del-btn:hover { background:var(--danger-bg);color:var(--danger);border-color:var(--danger); }
+.alias-deluser-btn { padding:3px 10px;border-radius:6px;border:1px solid transparent;background:transparent;color:var(--text-muted);cursor:pointer;font-size:0.72rem;font-weight:600;transition:all 0.2s;white-space:nowrap; }
+.alias-deluser-btn:hover { background:var(--danger-bg);color:var(--danger);border-color:var(--danger); }
+.alias-deluser-btn.restore:hover { background:var(--green-bg);color:var(--green);border-color:var(--green); }
+
+/* Data table */
+.data-table-wrap { max-height:500px;overflow:auto;border-radius:var(--radius-sm); }
+.data-table-wrap::-webkit-scrollbar { width:4px;height:4px }
+.data-table-wrap::-webkit-scrollbar-track { background:transparent }
+.data-table-wrap::-webkit-scrollbar-thumb { background:var(--border);border-radius:4px }
+.data-table { width:100%;border-collapse:collapse;font-size:0.8rem; }
+.data-table thead { position:sticky;top:0;z-index:2; }
+.data-table th { background:var(--bg-secondary); padding:10px 10px; text-align:left; color:var(--text-muted); font-weight:600; font-size:0.73rem; text-transform:uppercase; letter-spacing:0.04em; border-bottom:2px solid var(--border); white-space:nowrap; }
+.data-table td { padding:8px 10px; border-bottom:1px solid var(--border); color:var(--text-secondary); white-space:nowrap; }
+.data-table tbody tr { transition:background 0.15s; }
+.data-table tbody tr:hover { background:var(--chip-bg); }
+.data-table .row-actions { display:flex;gap:4px; }
+.btn-icon { width:30px;height:30px;border-radius:6px;border:1px solid transparent;background:transparent;cursor:pointer;font-size:0.85rem;display:flex;align-items:center;justify-content:center;transition:all 0.2s;color:var(--text-muted); }
+.btn-icon.edit:hover { background:var(--chip-active-bg);color:var(--accent);border-color:var(--accent); }
+.btn-icon.del:hover  { background:var(--danger-bg);color:var(--danger);border-color:var(--danger); }
+.source-badge { display:inline-block;padding:2px 8px;border-radius:10px;font-size:0.68rem;font-weight:600;letter-spacing:0.03em; }
+.source-badge.amount { background:var(--purple-bg);color:var(--purple); }
+.source-badge.cost   { background:var(--green-bg);color:var(--green); }
+
+/* Modal */
+.modal-overlay { position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.5);display:flex;align-items:center;justify-content:center;z-index:9999;backdrop-filter:blur(4px);-webkit-backdrop-filter:blur(4px);animation:fadeIn 0.2s ease; }
+@keyframes fadeIn { from{opacity:0} to{opacity:1} }
+.modal-box { background:var(--bg-secondary);border:1px solid var(--border);border-radius:var(--radius);padding:24px 28px;max-width:420px;width:90%;box-shadow:0 20px 60px rgba(0,0,0,0.4);animation:scaleIn 0.25s cubic-bezier(0.4,0,0.2,1); }
+@keyframes scaleIn { from{opacity:0;transform:scale(0.9)} to{opacity:1;transform:scale(1)} }
+.modal-title { font-size:1.05rem;font-weight:700;margin-bottom:10px; }
+.modal-body { font-size:0.88rem;color:var(--text-secondary);margin-bottom:20px;line-height:1.6; }
+.modal-actions { display:flex;justify-content:flex-end;gap:10px; }
+.modal-actions button { padding:8px 20px;border-radius:8px;cursor:pointer;font-size:0.85rem;font-weight:500;transition:all 0.2s; }
+.btn-cancel { border:1px solid var(--border);background:var(--chip-bg);color:var(--text-secondary); }
+.btn-cancel:hover { border-color:var(--border-hover);color:var(--text-primary); }
+.btn-danger { border:1px solid var(--danger);background:var(--danger);color:#fff; }
+.btn-danger:hover { opacity:0.85; }
+.btn-save { border:1px solid var(--accent);background:var(--accent);color:#fff; }
+.btn-save:hover { opacity:0.85; }
+
+/* Edit dialog fields */
+.edit-dialog-fields { display:flex;flex-direction:column;gap:10px;margin-bottom:20px; }
+.edit-dialog-fields label { display:flex;flex-direction:column;gap:4px;font-size:0.78rem;color:var(--text-muted);font-weight:500; }
+.edit-dialog-fields input,.edit-dialog-fields select { padding:8px 12px;border-radius:6px;border:1px solid var(--border);background:var(--bg-primary);color:var(--text-primary);font-size:0.85rem;outline:none;transition:border-color 0.2s; }
+.edit-dialog-fields input:focus,.edit-dialog-fields select:focus { border-color:var(--accent); }
+
+/* Toast */
+.toast { position:fixed;bottom:30px;left:50%;transform:translateX(-50%);background:var(--accent);color:#fff;padding:10px 24px;border-radius:22px;font-size:0.85rem;font-weight:600;z-index:9999;box-shadow:0 8px 30px var(--accent-glow);animation:toastIn 0.35s ease,toastOut 0.35s ease 1.8s forwards; }
+@keyframes toastIn { from{opacity:0;transform:translateX(-50%) translateY(20px)} to{opacity:1;transform:translateX(-50%) translateY(0)} }
+@keyframes toastOut{ from{opacity:1;transform:translateX(-50%) translateY(0)} to{opacity:0;transform:translateX(-50%) translateY(-20px)} }
+
+/* ============================================================
+   Loading overlay
+   ============================================================ */
+.loading-overlay { position:fixed;top:0;left:0;width:100%;height:100%;background:var(--bg-primary);display:flex;align-items:center;justify-content:center;z-index:9998;transition:opacity 0.4s ease;pointer-events:all; }
+.loading-overlay.hidden { opacity:0;pointer-events:none; }
+.loader { width:40px;height:40px;border:3px solid var(--border);border-top-color:var(--accent);border-radius:50%;animation:spin 0.8s linear infinite; }
+
+/* ============================================================
+   Responsive
+   ============================================================ */
+@media (max-width:1024px) { .summary-cards{grid-template-columns:repeat(2,1fr)} .charts-grid{grid-template-columns:1fr} }
+@media (max-width:640px) { .container{padding:12px 14px 24px} .summary-cards{grid-template-columns:1fr} .stat-card{padding:16px 18px} .stat-card .value{font-size:1.45rem} .header-left h1{font-size:1.3rem} .chart-wrap{height:260px} }
+</style>
+</head>
+<body>
+
+<div class="loading-overlay" id="loader"><div class="loader"></div></div>
+
+<div class="container">
+
+  <!-- Header -->
+  <header class="header">
+    <div class="header-left">
+      <h1>API 花费统计</h1>
+      <div class="sub" id="dateRangeLabel">加载中...</div>
+    </div>
+    <div class="header-right">
+      <button class="edit-toggle" id="editToggle" title="编辑模式">✏️</button>
+      <button class="refresh-btn" id="refreshBtn" title="刷新数据">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+          <polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/>
+        </svg>
+        刷新
+      </button>
+      <button class="theme-toggle" id="themeToggle" title="切换主题">
+        <span id="themeIcon">🌙</span>
+      </button>
+    </div>
+  </header>
+
+  <!-- Summary Cards -->
+  <div class="summary-cards" id="summaryCards">
+    <div class="stat-card"><div class="icon icon-cost">💰</div><div class="label">总花费</div><div class="value value-cost" id="valTotal">—</div></div>
+    <div class="stat-card"><div class="icon icon-avg">📊</div><div class="label">日均花费</div><div class="value value-avg" id="valAvg">—</div></div>
+    <div class="stat-card"><div class="icon icon-req">📨</div><div class="label">总请求数</div><div class="value value-req" id="valReq">—</div></div>
+    <div class="stat-card"><div class="icon icon-day">📅</div><div class="label">活跃天数</div><div class="value value-day" id="valDay">—</div></div>
+  </div>
+
+  <!-- Date Filter -->
+  <div class="date-filter">
+    <div class="date-filter-header">
+      <span class="date-filter-title">📋 日期范围筛选</span>
+      <div class="date-filter-actions">
+        <button id="btnSelectAll">✓ 全选</button>
+        <button id="btnDeselectAll">✕ 取消</button>
+      </div>
+    </div>
+    <div class="date-chips" id="dateChips"></div>
+  </div>
+
+  <!-- Charts -->
+  <div class="charts-grid">
+    <div class="chart-card full-width"><div class="chart-card-header">📈 每日花费趋势</div><div class="chart-wrap"><canvas id="chartDaily"></canvas></div></div>
+    <div class="chart-card"><div class="chart-card-header">🍩 模型花费占比</div><div class="chart-wrap"><canvas id="chartModel"></canvas></div></div>
+    <div class="chart-card"><div class="chart-card-header">👤 用户花费排名</div><div class="chart-wrap tall"><canvas id="chartUser"></canvas></div></div>
+    <div class="chart-card full-width"><div class="chart-card-header">🧩 Token 用量分布</div><div class="chart-wrap"><canvas id="chartToken"></canvas></div></div>
+  </div>
+
+  <!-- Edit Panel -->
+  <div class="edit-panel" id="editPanel">
+    <div class="edit-panel-inner">
+      <div class="tab-bar">
+        <button class="tab-btn active" data-tab="alias">📝 别名备注</button>
+        <button class="tab-btn" data-tab="data">📋 数据明细</button>
+      </div>
+      <!-- Tab: Alias -->
+      <div class="tab-content active" id="tab-alias">
+        <div class="alias-toolbar">
+          <button class="btn-xs" id="addAliasBtn">＋ 添加映射</button>
+          <button class="btn-xs primary" id="saveAliasBtn">💾 保存到文件</button>
+          <button class="btn-xs" id="deleteUnalisedBtn" style="border-color:var(--danger);color:var(--danger)">🧹 仅保留已备注用户</button>
+        </div>
+        <table class="alias-table">
+          <thead><tr><th>用户名</th><th>备注名</th><th>删除用户</th><th></th></tr></thead>
+          <tbody id="aliasTableBody"></tbody>
+        </table>
+      </div>
+      <!-- Tab: Data -->
+      <div class="tab-content" id="tab-data">
+        <div class="data-table-wrap">
+          <table class="data-table">
+            <thead><tr><th>来源</th><th>日期</th><th>模型</th><th>用户</th><th>Token类型</th><th>单价</th><th>数量</th><th>花费(¥)</th><th>操作</th></tr></thead>
+            <tbody id="dataTableBody"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<div id="modalContainer"></div>
+<div id="toastContainer"></div>
+
+<script>
+/* ============================================================
+   Chart.js global config
+   ============================================================ */
+function getTheme(){return document.documentElement.getAttribute('data-theme')}
+function isDark(){return getTheme()==='dark'}
+function gridColor(a=0.06){return isDark()?`rgba(255,255,255,${a})`:`rgba(0,0,0,${a})`}
+function textColor(){return isDark()?'#9aa0a6':'#64748b'}
+
+Chart.defaults.color=textColor()
+Chart.defaults.borderColor=gridColor(0.06)
+Chart.defaults.font.family="-apple-system,BlinkMacSystemFont,'Segoe UI','PingFang SC','Microsoft YaHei',sans-serif"
+Chart.defaults.animation.duration=600
+Chart.defaults.animation.easing='easeOutQuart'
+
+/* ============================================================
+   State
+   ============================================================ */
+let allDates=[],selectedDates=new Set(),charts={},editMode=false,aliases={},tableData=[],deletedUsers=[]
+
+/* ============================================================
+   Helpers
+   ============================================================ */
+function formatCost(v){return '¥'+Number(v).toLocaleString('zh-CN',{minimumFractionDigits:2,maximumFractionDigits:2})}
+function formatNum(v){return v>=10000?(v/10000).toFixed(1)+'万':Number(v).toLocaleString('zh-CN')}
+function formatShortNum(v){if(v>=1e6)return(v/1e6).toFixed(1)+'M';if(v>=1e3)return(v/1e3).toFixed(1)+'K';return String(v)}
+
+async function fetchJSON(url,opts){const r=await fetch(url,opts);if(!r.ok)throw Error(`HTTP ${r.status}`);return r.json()}
+
+function showToast(msg){
+  const el=document.createElement('div');el.className='toast';el.textContent=msg
+  document.getElementById('toastContainer').appendChild(el)
+  setTimeout(()=>el.remove(),2300)
+}
+
+function showModal(title,body,onConfirm,confirmLabel='确认删除',confirmClass='btn-danger'){
+  const c=document.getElementById('modalContainer')
+  c.innerHTML=`<div class="modal-overlay" id="modalOverlay"><div class="modal-box"><div class="modal-title">${title}</div><div class="modal-body">${body}</div><div class="modal-actions"><button class="btn-cancel" id="modalCancel">取消</button><button class="${confirmClass}" id="modalConfirm">${confirmLabel}</button></div></div></div>`
+  document.getElementById('modalCancel').addEventListener('click',()=>c.innerHTML='')
+  document.getElementById('modalConfirm').addEventListener('click',()=>{c.innerHTML='';onConfirm()})
+  document.getElementById('modalOverlay').addEventListener('click',function(e){if(e.target===this)c.innerHTML=''})
+}
+
+function showEditDialog(row,onSave){
+  const c=document.getElementById('modalContainer')
+  const isAmount=row.source==='amount'
+  const typeOpts=isAmount?`<option value="output_tokens" ${row.type==='output_tokens'?'selected':''}>Output Tokens</option><option value="input_cache_hit_tokens" ${row.type==='input_cache_hit_tokens'?'selected':''}>Cache Hit Tokens</option><option value="input_cache_miss_tokens" ${row.type==='input_cache_miss_tokens'?'selected':''}>Cache Miss Tokens</option><option value="request_count" ${row.type==='request_count'?'selected':''}>Request Count</option>`:`<option value="daily_cost">Daily Cost</option>`
+  c.innerHTML=`<div class="modal-overlay" id="modalOverlay"><div class="modal-box" style="max-width:480px"><div class="modal-title">✏️ 编辑行</div><div class="edit-dialog-fields"><label>日期 <input id="editDate" type="date" value="${row.utc_date}"></label><label>模型 <input id="editModel" value="${row.model||''}"></label><label>用户 <input id="editUser" value="${row.api_key_name||''}"></label><label>类型 <select id="editType">${typeOpts}</select></label><label>单价 <input id="editPrice" value="${row.price||''}"></label><label>数量 <input id="editAmount" value="${row.amount||''}"></label></div><div class="modal-actions"><button class="btn-cancel" id="modalCancel">取消</button><button class="btn-save" id="modalSave">💾 保存</button></div></div></div>`
+  document.getElementById('modalCancel').addEventListener('click',()=>c.innerHTML='')
+  document.getElementById('modalSave').addEventListener('click',()=>{c.innerHTML='';onSave({utc_date:document.getElementById('editDate').value,model:document.getElementById('editModel').value,api_key_name:document.getElementById('editUser').value,type:document.getElementById('editType').value,price:document.getElementById('editPrice').value,amount:document.getElementById('editAmount').value})})
+  document.getElementById('modalOverlay').addEventListener('click',function(e){if(e.target===this)c.innerHTML=''})
+}
+
+/* ============================================================
+   Animate value
+   ============================================================ */
+function animateValue(el,start,end,duration,formatter){
+  const st=performance.now()
+  function step(now){const p=Math.min((now-st)/duration,1),e=1-Math.pow(1-p,3);el.textContent=formatter?formatter(start+(end-start)*e):Number(start+(end-start)*e).toFixed(2);if(p<1)requestAnimationFrame(step)}
+  requestAnimationFrame(step)
+}
+
+/* ============================================================
+   Date filter
+   ============================================================ */
+async function initDateFilter(){
+  const data=await fetchJSON('/api/date-range');allDates=data.dates;selectedDates=new Set(allDates);renderDateChips()
+  document.getElementById('dateRangeLabel').textContent=`${data.dates[0]||''} ~ ${data.dates[data.dates.length-1]||''}  ·  ${allDates.length} 天`
+}
+function renderDateChips(){
+  const c=document.getElementById('dateChips');c.innerHTML=''
+  allDates.forEach((d,i)=>{const chip=document.createElement('span');chip.className='date-chip'+(selectedDates.has(d)?' active':'');chip.textContent=d.slice(5);chip.title=d;chip.style.animationDelay=(i*0.015)+'s';chip.addEventListener('click',()=>{if(selectedDates.has(d)){selectedDates.delete(d);chip.classList.remove('active')}else{selectedDates.add(d);chip.classList.add('active')}refreshAll()});c.appendChild(chip)})
+}
+function selectAll(){selectedDates=new Set(allDates);document.querySelectorAll('.date-chip').forEach(c=>c.classList.add('active'));refreshAll()}
+function deselectAll(){selectedDates=new Set();document.querySelectorAll('.date-chip').forEach(c=>c.classList.remove('active'));refreshAll()}
+
+/* ============================================================
+   Summary
+   ============================================================ */
+async function loadSummary(){
+  const dates=[...selectedDates].join(','),data=await fetchJSON('/api/summary?dates='+encodeURIComponent(dates))
+  animateValue(document.getElementById('valTotal'),0,data.total_cost,800,v=>formatCost(v))
+  animateValue(document.getElementById('valAvg'),0,data.avg_daily_cost,800,v=>formatCost(v))
+  animateValue(document.getElementById('valReq'),0,data.total_requests,800,v=>formatNum(v))
+  animateValue(document.getElementById('valDay'),0,data.active_days,500,v=>v+' 天')
+}
+
+/* ============================================================
+   Charts
+   ============================================================ */
+function destroyChart(key){if(charts[key]){charts[key].destroy();charts[key]=null}}
+
+async function renderDailyChart(){
+  const dates=[...selectedDates].join(','),data=await fetchJSON('/api/daily-cost?dates='+encodeURIComponent(dates));destroyChart('daily')
+  const colors=['#6c8cff','#34d399','#fb923c','#f472b6','#a78bfa','#38bdf8','#fbbf24','#fb7185']
+  const ctx=document.getElementById('chartDaily').getContext('2d')
+  charts.daily=new Chart(ctx,{type:'bar',data:{labels:data.dates.map(d=>d.slice(5)),datasets:data.datasets.map((ds,i)=>({label:ds.label,data:ds.data,backgroundColor:colors[i%colors.length]+'99',borderColor:colors[i%colors.length],borderWidth:1,borderRadius:4,borderSkipped:false}))},options:{responsive:true,maintainAspectRatio:false,interaction:{mode:'index',intersect:false},plugins:{legend:{position:'bottom',labels:{usePointStyle:true,pointStyleWidth:8,padding:18,boxWidth:8}},tooltip:{callbacks:{label:ctx=>`${ctx.dataset.label}: ¥${ctx.raw.toFixed(2)}`}}},scales:{x:{stacked:true,grid:{display:false}},y:{stacked:true,grid:{color:gridColor(0.05)},ticks:{callback:v=>'¥'+v}}}}})
+}
+
+async function renderModelChart(){
+  const dates=[...selectedDates].join(','),data=await fetchJSON('/api/cost-by-model?dates='+encodeURIComponent(dates));destroyChart('model')
+  const colors=['#6c8cff','#34d399','#fb923c','#f472b6','#a78bfa','#38bdf8','#fbbf24','#fb7185']
+  const ctx=document.getElementById('chartModel').getContext('2d')
+  charts.model=new Chart(ctx,{type:'doughnut',data:{labels:data.labels,datasets:[{data:data.data,backgroundColor:colors,borderColor:isDark()?'#161825':'#ffffff',borderWidth:3,hoverBorderWidth:4}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{position:'bottom',labels:{usePointStyle:true,pointStyleWidth:8,padding:16,boxWidth:8}},tooltip:{callbacks:{label:ctx=>{const t=ctx.dataset.data.reduce((a,b)=>a+b,0);return` ${ctx.label}: ¥${ctx.raw.toFixed(2)} (${((ctx.raw/t)*100).toFixed(1)}%)`}}}}}})
+}
+
+async function renderUserChart(){
+  const dates=[...selectedDates].join(','),data=await fetchJSON('/api/cost-by-user?dates='+encodeURIComponent(dates));destroyChart('user')
+  const labels=data.labels.slice(0,15),values=data.data.slice(0,15)
+  const ctx=document.getElementById('chartUser').getContext('2d')
+  charts.user=new Chart(ctx,{type:'bar',data:{labels:labels,datasets:[{label:'花费 (¥)',data:values,backgroundColor:values.map((v,i)=>`hsla(${240-i*8},70%,70%,0.7)`),borderColor:values.map((v,i)=>`hsl(${240-i*8},70%,70%)`),borderWidth:1,borderRadius:4}]},options:{indexAxis:'y',responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false},tooltip:{callbacks:{label:ctx=>` ¥${ctx.raw.toFixed(2)}`}}},scales:{x:{grid:{color:gridColor(0.05)},ticks:{callback:v=>'¥'+v}},y:{grid:{display:false},ticks:{font:{size:11}}}}}})
+}
+
+async function renderTokenChart(){
+  const dates=[...selectedDates].join(','),data=await fetchJSON('/api/token-usage?dates='+encodeURIComponent(dates));destroyChart('token')
+  const colors=['#6c8cff','#34d399','#fb923c']
+  const ctx=document.getElementById('chartToken').getContext('2d')
+  charts.token=new Chart(ctx,{type:'bar',data:{labels:data.models,datasets:data.datasets.map((ds,i)=>({label:ds.label,data:ds.data,backgroundColor:colors[i]+'99',borderColor:colors[i],borderWidth:1,borderRadius:4,borderSkipped:false}))},options:{responsive:true,maintainAspectRatio:false,interaction:{mode:'index',intersect:false},plugins:{legend:{position:'bottom',labels:{usePointStyle:true,pointStyleWidth:8,padding:18,boxWidth:8}},tooltip:{callbacks:{label:ctx=>` ${ctx.dataset.label}: ${formatShortNum(ctx.raw)} tokens`}}},scales:{x:{stacked:true,grid:{display:false}},y:{stacked:true,grid:{color:gridColor(0.05)},ticks:{callback:v=>formatShortNum(v)}}}}})
+}
+
+/* ============================================================
+   Edit mode
+   ============================================================ */
+async function toggleEditMode(){
+  editMode=!editMode
+  const btn=document.getElementById('editToggle'),panel=document.getElementById('editPanel')
+  if(editMode){btn.classList.add('active');panel.classList.add('open');await loadEditPanelData()}
+  else{btn.classList.remove('active');panel.classList.remove('open')}
+}
+
+async function loadEditPanelData(){
+  aliases=await fetchJSON('/api/aliases');deletedUsers=await fetchJSON('/api/deleted-users')
+  renderAliasTable()
+  tableData=await fetchJSON('/api/table-data');renderDataTable()
+  document.querySelectorAll('.tab-btn').forEach(b=>b.classList.remove('active'))
+  document.querySelector('.tab-btn[data-tab="alias"]').classList.add('active')
+  document.querySelectorAll('.tab-content').forEach(c=>c.classList.remove('active'))
+  document.getElementById('tab-alias').classList.add('active')
+}
+
+/* Alias editor */
+function renderAliasTable(){
+  const tbody=document.getElementById('aliasTableBody');tbody.innerHTML=''
+
+  // 活跃用户
+  const users=new Set();tableData.forEach(r=>{if(r.api_key_name)users.add(r.api_key_name)});Object.keys(aliases).forEach(u=>users.add(u))
+  ;[...users].sort().forEach(name=>{const tr=document.createElement('tr');const v=aliases[name]||'';tr.innerHTML=`<td><code style="font-size:0.82rem;color:var(--text-primary)">${name}</code></td><td><input class="alias-input" value="${v}" data-user="${name}" placeholder="输入备注名..."></td><td><button class="alias-deluser-btn" data-user="${name}" title="删除该用户所有数据">🗑 删除</button></td><td><button class="alias-del-btn" data-user="${name}" title="删除映射">×</button></td>`;tbody.appendChild(tr)})
+
+  // 已删除用户
+  if(deletedUsers.length>0){
+    const sep=document.createElement('tr');sep.innerHTML=`<td colspan="4" style="padding:14px 0 6px;color:var(--danger);font-size:0.73rem;font-weight:600;text-transform:uppercase;letter-spacing:0.05em">⚠ 已删除用户</td>`;tbody.appendChild(sep)
+    deletedUsers.forEach(name=>{const tr=document.createElement('tr');tr.style.opacity='0.6';tr.innerHTML=`<td><code style="font-size:0.82rem;color:var(--danger);text-decoration:line-through">${name}</code></td><td><span style="color:var(--text-muted);font-size:0.78rem">已删除</span></td><td><button class="alias-deluser-btn restore" data-user="${name}" title="恢复用户数据">↩ 恢复</button></td><td></td>`;tbody.appendChild(tr)})
+  }
+
+  tbody.querySelectorAll('.alias-del-btn').forEach(b=>b.addEventListener('click',()=>{delete aliases[b.dataset.user];renderAliasTable()}))
+  tbody.querySelectorAll('.alias-deluser-btn:not(.restore)').forEach(b=>b.addEventListener('click',()=>{const user=b.dataset.user;showModal('删除用户数据',`确定删除用户 <b>${user}</b> 的所有用量数据吗？<br><br>此操作将该用户加入黑名单，图表/数据表中不再显示。<br><span style="color:var(--green)">可通过"已删除用户"区域恢复。</span>`,async()=>{const resp=await fetchJSON('/api/delete-user',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({api_key_name:user})});showToast(`🗑 已删除 ${user} (${resp.deleted} 行)`);delete aliases[user];await loadEditPanelData();await refreshAll()},'确认删除用户')}))
+  tbody.querySelectorAll('.alias-deluser-btn.restore').forEach(b=>b.addEventListener('click',()=>{const user=b.dataset.user;showModal('恢复用户数据',`确定恢复用户 <b>${user}</b> 的数据吗？<br><br>该用户的所有原始数据将重新出现在图表中。`,async()=>{await fetchJSON('/api/restore-user',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({api_key_name:user})});showToast(`↩ 已恢复 ${user}`);await loadEditPanelData();await refreshAll()},'确认恢复','btn-save')}))
+}
+
+function collectAliases(){
+  const a={};document.querySelectorAll('.alias-input').forEach(inp=>{const v=inp.value.trim();if(v)a[inp.dataset.user]=v});return a
+}
+
+async function saveAliases(){
+  const na=collectAliases();await fetchJSON('/api/aliases',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(na)})
+  aliases=na;showToast('✅ 别名已保存');await renderUserChart()
+}
+
+async function addAliasRow(){
+  const name=prompt('输入用户名 (api_key_name):');if(!name||!name.trim())return;if(aliases[name.trim()]){showToast('该用户已存在');return}
+  aliases[name.trim()]='';renderAliasTable()
+}
+
+/* Data table */
+function renderDataTable(){
+  const tbody=document.getElementById('dataTableBody');tbody.innerHTML=''
+  tableData.forEach((row,i)=>{const tr=document.createElement('tr');const costStr=row.cost>0?'¥'+row.cost.toFixed(4):(row.type==='request_count'?'—':'¥0');const aliasDisp=row.api_key_name_alias&&row.api_key_name_alias!==row.api_key_name?`${row.api_key_name_alias} <span style="color:var(--text-muted);font-size:0.7rem">(${row.api_key_name})</span>`:(row.api_key_name||'—')
+  tr.innerHTML=`<td><span class="source-badge ${row.source}">${row.source==='amount'?'用量':'花费'}</span></td><td>${row.utc_date}</td><td>${row.model}</td><td>${aliasDisp}</td><td>${row.type.replace(/_/g,' ')}</td><td>${row.price||'—'}</td><td>${row.amount||'—'}</td><td>${costStr}</td><td><div class="row-actions"><button class="btn-icon edit" data-idx="${i}" title="编辑">✏️</button><button class="btn-icon del" data-idx="${i}" title="删除">🗑️</button></div></td>`;tbody.appendChild(tr)})
+  tbody.querySelectorAll('.btn-icon.del').forEach(b=>b.addEventListener('click',()=>{const idx=parseInt(b.dataset.idx),row=tableData[idx];showModal('确认删除',`确定删除这条记录吗？<br><br><b>${row.utc_date} / ${row.model} / ${row.api_key_name||'—'} / ${row.type}</b><br>花费: ¥${row.cost.toFixed(4)}`,async()=>{await fetchJSON('/api/delete-row',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({source:row.source,file:row.file,idx:row.idx})});showToast('🗑️ 已删除');await loadEditPanelData();await refreshAll()})}))
+  tbody.querySelectorAll('.btn-icon.edit').forEach(b=>b.addEventListener('click',()=>{const idx=parseInt(b.dataset.idx),row=tableData[idx];showEditDialog(row,async(values)=>{await fetchJSON('/api/edit-row',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({source:row.source,file:row.file,idx:row.idx,values})});showToast('✏️ 已更新');await loadEditPanelData();await refreshAll()})}))
+}
+
+/* ============================================================
+   Refresh all
+   ============================================================ */
+async function refreshAll(){
+  await Promise.all([loadSummary(),renderDailyChart(),renderModelChart(),renderUserChart(),renderTokenChart()])
+  if(editMode){tableData=await fetchJSON('/api/table-data');renderDataTable()}
+}
+
+/* ============================================================
+   Theme
+   ============================================================ */
+function applyTheme(theme){
+  document.documentElement.setAttribute('data-theme',theme)
+  document.getElementById('themeIcon').textContent=theme==='dark'?'🌙':'☀️'
+  localStorage.setItem('budget-theme',theme)
+  Chart.defaults.color=textColor();Chart.defaults.borderColor=gridColor(0.06);refreshAll()
+}
+function toggleTheme(){applyTheme(getTheme()==='dark'?'light':'dark')}
+
+function switchTab(name){
+  document.querySelectorAll('.tab-btn').forEach(b=>b.classList.remove('active'))
+  document.querySelector(`.tab-btn[data-tab="${name}"]`).classList.add('active')
+  document.querySelectorAll('.tab-content').forEach(c=>c.classList.remove('active'))
+  document.getElementById('tab-'+name).classList.add('active')
+}
+
+/* ============================================================
+   Init
+   ============================================================ */
+async function init(){
+  const saved=localStorage.getItem('budget-theme')||'dark';applyTheme(saved)
+  await initDateFilter();await refreshAll();document.getElementById('loader').classList.add('hidden')
+}
+
+document.getElementById('themeToggle').addEventListener('click',toggleTheme)
+document.getElementById('editToggle').addEventListener('click',toggleEditMode)
+document.getElementById('btnSelectAll').addEventListener('click',selectAll)
+document.getElementById('btnDeselectAll').addEventListener('click',deselectAll)
+document.getElementById('refreshBtn').addEventListener('click',()=>{const b=document.getElementById('refreshBtn');b.classList.add('spin');refreshAll().then(()=>b.classList.remove('spin'))})
+document.getElementById('saveAliasBtn').addEventListener('click',saveAliases)
+document.getElementById('addAliasBtn').addEventListener('click',addAliasRow)
+document.getElementById('deleteUnalisedBtn').addEventListener('click',()=>{
+  showModal('仅保留已备注用户','此操作会将<b>所有未备注的用户</b>加入黑名单，只保留已设置备注名的用户。<br><br>已备注用户 = 白名单保留<br>未备注用户 = 加入黑名单<br><br><span style="color:var(--green)">可通过下方"已删除用户"恢复。</span>',async()=>{
+    const resp=await fetchJSON('/api/delete-unalised',{method:'POST',headers:{'Content-Type':'application/json'}})
+    showToast(`🧹 保留 ${resp.kept_users.length} 个用户, 删除 ${resp.deleted_users.length} 个 (${resp.deleted_rows} 行)`)
+    await loadEditPanelData();await refreshAll()
+  },'确认执行','btn-danger')
+})
+document.querySelectorAll('.tab-btn').forEach(b=>b.addEventListener('click',()=>switchTab(b.dataset.tab)))
+
+init()
+</script>
+</body>
+</html>
