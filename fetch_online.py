@@ -178,8 +178,12 @@ def identify_file_type(filepath):
 
 
 def merge_csv(filename, fieldnames, new_rows):
-    """合并新行到已有 CSV，按所有字段去重。原子写入。"""
+    """合并新行到已有 CSV，按业务字段去重（排除 user_id）。原子写入。"""
     filepath = os.path.join(BASE_DIR, filename)
+
+    # 去重键排除 user_id — 因为 DeepSeek 每次导出可能分配不同的 user_id UUID
+    dedup_fields = [k for k in fieldnames if k != "user_id"]
+
     existing_rows = []
     existing_set = set()
 
@@ -188,12 +192,12 @@ def merge_csv(filename, fieldnames, new_rows):
             reader = csv.DictReader(f)
             for row in reader:
                 existing_rows.append(row)
-                key = tuple(row.get(k, "") for k in fieldnames)
+                key = tuple(row.get(k, "") for k in dedup_fields)
                 existing_set.add(key)
 
     added = 0
     for row in new_rows:
-        key = tuple(row.get(k, "") for k in fieldnames)
+        key = tuple(row.get(k, "") for k in dedup_fields)
         if key not in existing_set:
             existing_rows.append(row)
             existing_set.add(key)
