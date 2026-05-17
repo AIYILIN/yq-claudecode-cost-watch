@@ -296,6 +296,24 @@ body::after {
 .loader { width:40px;height:40px;border:3px solid var(--border);border-top-color:var(--accent);border-radius:50%;animation:spin 0.8s linear infinite; }
 
 /* ============================================================
+   Fetch status bar
+   ============================================================ */
+.fetch-status-bar {
+  position: fixed; top: 0; left: 0; right: 0; z-index: 9997;
+  padding: 10px 24px; text-align: center; font-size: 0.85rem; font-weight: 500;
+  display: flex; align-items: center; justify-content: center; gap: 10px;
+  transition: transform 0.35s ease, opacity 0.35s ease;
+  transform: translateY(-100%); opacity: 0;
+}
+.fetch-status-bar.show { transform: translateY(0); opacity: 1; }
+.fetch-status-bar.running { background: var(--accent); color: #fff; }
+.fetch-status-bar.awaiting_login { background: var(--orange); color: #fff; }
+.fetch-status-bar.done { background: var(--green); color: #fff; }
+.fetch-status-bar.error { background: var(--danger); color: #fff; }
+.fetch-status-bar .close-bar { cursor: pointer; background: none; border: none; color: inherit; font-size: 1.2rem; opacity: 0.7; line-height: 1; padding: 0 4px; }
+.fetch-status-bar .close-bar:hover { opacity: 1; }
+
+/* ============================================================
    Responsive
    ============================================================ */
 @media (max-width:1024px) { .summary-cards{grid-template-columns:repeat(2,1fr)} .charts-grid{grid-template-columns:1fr} }
@@ -321,6 +339,12 @@ body::after {
           <polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/>
         </svg>
         刷新
+      </button>
+      <button class="refresh-btn" id="fetchOnlineBtn" title="从 DeepSeek 平台在线更新数据">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/>
+        </svg>
+        在线更新
       </button>
       <button class="theme-toggle" id="themeToggle" title="切换主题">
         <span id="themeIcon">🌙</span>
@@ -410,7 +434,7 @@ Chart.defaults.animation.easing='easeOutQuart'
 /* ============================================================
    State
    ============================================================ */
-let allDates=[],selectedDates=new Set(),charts={},editMode=false,aliases={},tableData=[],deletedUsers=[]
+let allDates=[],selectedDates=new Set(),charts={},editMode=false,aliases={},tableData=[],deletedUsers=[],fetchPollTimer=null
 
 /* ============================================================
    Helpers
@@ -601,11 +625,77 @@ function switchTab(name){
 }
 
 /* ============================================================
+   Online fetch
+   ============================================================ */
+async function startOnlineFetch(){
+  const resp=await fetchJSON('/api/fetch-online',{method:'POST'})
+  if(resp.running){showToast('已有在线更新任务在运行中');return}
+  showToast('正在启动浏览器...')
+  startFetchPolling()
+}
+
+function startFetchPolling(){
+  if(fetchPollTimer)clearInterval(fetchPollTimer)
+  showFetchStatusBar('running','正在获取数据...')
+  fetchPollTimer=setInterval(pollFetchStatus,2000)
+}
+
+async function pollFetchStatus(){
+  try{
+    const status=await fetchJSON('/api/fetch-status')
+    updateFetchStatusBar(status)
+    if(status.status==='done'||status.status==='error'||status.status==='idle'){
+      clearInterval(fetchPollTimer);fetchPollTimer=null
+      if(status.status==='done'){
+        showToast('数据更新成功')
+        await initDateFilter();await refreshAll()
+        if(editMode)await loadEditPanelData()
+        setTimeout(hideFetchStatusBar,5000)
+      }else if(status.status==='error'){
+        showToast('更新失败: '+(status.message||'未知错误'))
+      }
+    }
+  }catch(e){/* 网络错误时继续轮询 */}
+}
+
+function showFetchStatusBar(type,message){
+  let bar=document.getElementById('fetchStatusBar')
+  if(!bar){
+    bar=document.createElement('div');bar.id='fetchStatusBar';bar.className='fetch-status-bar'
+    bar.innerHTML=`<span id="fetchStatusMsg"></span><button class="close-bar" id="closeStatusBar">&times;</button>`
+    document.body.prepend(bar)
+    document.getElementById('closeStatusBar').addEventListener('click',hideFetchStatusBar)
+  }
+  bar.className='fetch-status-bar '+type+' show'
+  document.getElementById('fetchStatusMsg').textContent=message
+}
+
+function updateFetchStatusBar(status){
+  const bar=document.getElementById('fetchStatusBar');if(!bar)return
+  const msg=document.getElementById('fetchStatusMsg');if(!msg)return
+  switch(status.status){
+    case'running':bar.className='fetch-status-bar running show';msg.textContent=status.message||'正在获取...';break
+    case'awaiting_login':bar.className='fetch-status-bar awaiting_login show';msg.textContent=status.message||'请在浏览器中登录';break
+    case'done':bar.className='fetch-status-bar done show';msg.textContent=status.message||'更新完成';break
+    case'error':bar.className='fetch-status-bar error show';msg.textContent=status.message||'更新失败';break
+  }
+}
+
+function hideFetchStatusBar(){
+  const bar=document.getElementById('fetchStatusBar');if(bar){bar.classList.remove('show');setTimeout(()=>{if(bar.parentNode)bar.remove()},350)}
+}
+
+/* ============================================================
    Init
    ============================================================ */
 async function init(){
   const saved=localStorage.getItem('budget-theme')||'dark';applyTheme(saved)
   await initDateFilter();await refreshAll();document.getElementById('loader').classList.add('hidden')
+  // 检查是否有正在运行的在线更新任务
+  try{
+    const status=await fetchJSON('/api/fetch-status')
+    if(status.status==='running'||status.status==='awaiting_login')startFetchPolling()
+  }catch(e){}
 }
 
 document.getElementById('themeToggle').addEventListener('click',toggleTheme)
@@ -613,6 +703,7 @@ document.getElementById('editToggle').addEventListener('click',toggleEditMode)
 document.getElementById('btnSelectAll').addEventListener('click',selectAll)
 document.getElementById('btnDeselectAll').addEventListener('click',deselectAll)
 document.getElementById('refreshBtn').addEventListener('click',()=>{const b=document.getElementById('refreshBtn');b.classList.add('spin');refreshAll().then(()=>b.classList.remove('spin'))})
+document.getElementById('fetchOnlineBtn').addEventListener('click',startOnlineFetch)
 document.getElementById('saveAliasBtn').addEventListener('click',saveAliases)
 document.getElementById('addAliasBtn').addEventListener('click',addAliasRow)
 document.getElementById('deleteUnalisedBtn').addEventListener('click',()=>{

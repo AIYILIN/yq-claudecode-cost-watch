@@ -1,1 +1,6 @@
 .claude/
+.deepseek-browser-data/
+.fetch-status.json
+.fetch-debug.*
+.fetch-diag.txt
+__pycache__/

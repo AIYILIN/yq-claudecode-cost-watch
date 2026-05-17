@@ -4,13 +4,17 @@ import csv
 import glob
 import json
 import os
+import subprocess
+import sys
 from collections import defaultdict
+from datetime import datetime, timezone
 from flask import Flask, jsonify, render_template, request
 
 app = Flask(__name__)
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 ALIASES_FILE = os.path.join(BASE_DIR, "user-aliases.json")
 DELETED_USERS_FILE = os.path.join(BASE_DIR, "deleted-users.json")
+FETCH_STATUS_FILE = os.path.join(BASE_DIR, ".fetch-status.json")
 
 # ── 别名管理 ──────────────────────────────────────────────
 
@@ -481,6 +485,66 @@ def delete_unalised():
         "deleted_rows": total_rows,
         "kept_users": [u for u in sorted(all_users) if u not in current and u not in new_deleted],
     })
+
+
+# ── 在线更新 API ──────────────────────────────────────────
+
+@app.route("/api/fetch-online", methods=["POST"])
+def fetch_online():
+    """启动在线数据获取（后台子进程）"""
+    # 检查是否已有任务在运行
+    if os.path.exists(FETCH_STATUS_FILE):
+        try:
+            with open(FETCH_STATUS_FILE, "r", encoding="utf-8") as f:
+                current = json.load(f)
+            if current.get("status") in ("running", "awaiting_login"):
+                return jsonify({"ok": False, "running": True, "message": "已有任务在运行中"})
+        except Exception:
+            pass
+
+    # 写入初始状态
+    status = {"status": "running", "message": "正在启动浏览器...", "started_at": datetime.now(timezone.utc).isoformat()}
+    tmp = FETCH_STATUS_FILE + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as f:
+        json.dump(status, f, ensure_ascii=False)
+    os.replace(tmp, FETCH_STATUS_FILE)
+
+    # 启动后台子进程
+    script_path = os.path.join(BASE_DIR, "fetch_online.py")
+    subprocess.Popen(
+        [sys.executable, script_path, FETCH_STATUS_FILE],
+        cwd=BASE_DIR,
+        creationflags=subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0,
+    )
+
+    return jsonify({"ok": True, "message": "已启动"})
+
+
+@app.route("/api/fetch-status")
+def fetch_status():
+    """获取在线更新的当前状态"""
+    if not os.path.exists(FETCH_STATUS_FILE):
+        return jsonify({"status": "idle"})
+
+    try:
+        with open(FETCH_STATUS_FILE, "r", encoding="utf-8") as f:
+            data = json.load(f)
+
+        # 检查超时（10 分钟）
+        if data.get("status") in ("running", "awaiting_login"):
+            started = data.get("started_at", "")
+            if started:
+                try:
+                    st = datetime.fromisoformat(started)
+                    elapsed = (datetime.now(timezone.utc) - st).total_seconds()
+                    if elapsed > 600:
+                        return jsonify({"status": "error", "message": "任务超时（10分钟），请重试"})
+                except Exception:
+                    pass
+
+        return jsonify(data)
+    except Exception:
+        return jsonify({"status": "idle"})
 
 
 if __name__ == "__main__":
